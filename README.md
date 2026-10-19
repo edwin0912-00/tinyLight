@@ -25,7 +25,7 @@ Built on a Nanlite light (Feasycom Bluetooth mesh). Other lights plug in as driv
 ## Quick start (macOS)
 
 ```bash
-git clone https://github.com/<you>/tinyLight && cd tinyLight
+git clone https://github.com/edwin0912-00/tinyLight && cd tinyLight
 python3 -m venv .venv && .venv/bin/pip install -e '.[homekit]'
 .venv/bin/tinylight connect     # run in Terminal.app: it needs Bluetooth permission
 .venv/bin/tinylight install     # bridge + Apple Home at login
