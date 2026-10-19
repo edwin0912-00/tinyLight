@@ -1,0 +1,20 @@
+# never commit secrets or personal state (they live in $TINYLIGHT_HOME, default ~/.tinylight)
+mesh_keys.json
+token
+*.p12
+*.pem
+state.json
+devices.json
+schedule.json
+scenes.json
+alarms.json
+config.json
+homekit/
+probes/
+# build and tooling
+app/build/
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.DS_Store

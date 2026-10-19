@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Light">
+<meta name="theme-color" content="#111113">
+<title>Room light</title>
+<style>
+  :root { --bg:#111113; --card:#1c1c1f; --line:#2c2c30; --text:#f2f2f2; --muted:#9a9aa0; --glow:255,200,140; --accent:#ff9f43; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif; }
+  body { padding:calc(env(safe-area-inset-top) + 18px) 18px calc(env(safe-area-inset-bottom) + 24px); min-height:100vh;
+         background:radial-gradient(120% 60% at 50% -10%, rgba(var(--glow),calc(.10 + .35*var(--lvl,0))), transparent 70%), var(--bg); transition:background .6s; }
+  header { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+  header h1 { font-size:22px; font-weight:600; margin:0; flex:1; }
+  .dot { width:9px; height:9px; border-radius:50%; background:#3a3a3e; transition:background .3s; }
+  .dot.on { background:#34c759; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:18px; margin-bottom:14px; }
+  .alarm { display:none; text-align:center; border-color:rgba(255,159,67,.5); background:linear-gradient(180deg,rgba(255,159,67,.18),var(--card)); }
+  .alarm.show { display:block; animation:pop .35s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes pop { from { transform:scale(.96); opacity:0 } to { transform:none; opacity:1 } }
+  .alarm .time { font-size:44px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .alarm .name { color:var(--muted); margin:2px 0 16px; }
+  .big { display:block; width:100%; border:0; border-radius:16px; padding:20px; font-size:22px; font-weight:600; color:#1a1206; background:var(--accent); }
+  .big:active { transform:scale(.98); }
+  .ghost { margin-top:10px; background:#2a2a2e; color:var(--text); font-size:17px; padding:15px; }
+  .power { display:flex; align-items:center; gap:16px; }
+  .knob { width:64px; height:64px; border-radius:50%; border:0; background:#2a2a2e; transition:background .3s, box-shadow .3s; }
+  .knob.on { background:rgb(var(--glow)); box-shadow:0 0 30px rgba(var(--glow),.55); }
+  .power .val { font-size:30px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .power .sub { color:var(--muted); font-size:14px; }
+  label { display:flex; justify-content:space-between; color:var(--muted); font-size:14px; margin:16px 0 8px; }
+  label b { color:var(--text); font-weight:500; font-variant-numeric:tabular-nums; }
+  input[type=range] { -webkit-appearance:none; appearance:none; width:100%; height:34px; border-radius:17px; outline:none; margin:0; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:34px; height:34px; border-radius:50%; background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.4); }
+  #bri { background:linear-gradient(90deg,#2a2a2e,rgb(var(--glow))); }
+  #cct { background:linear-gradient(90deg,#ffa54f,#ffc58f,#ffe4c8,#fff4ec,#e6ebff); }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { border:1px solid var(--line); background:#232327; color:var(--text); border-radius:999px; padding:10px 14px; font-size:15px; }
+  .chip:active { background:#303035; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .muted { color:var(--muted); font-size:14px; }
+  .switch { width:52px; height:32px; border-radius:16px; background:#3a3a3e; border:0; position:relative; transition:background .25s; }
+  .switch::after { content:""; position:absolute; top:3px; left:3px; width:26px; height:26px; border-radius:50%; background:#fff; transition:transform .3s cubic-bezier(.3,1.4,.5,1); }
+  .switch.on { background:#34c759; } .switch.on::after { transform:translateX(20px); }
+  .err { color:#ff6b6b; font-size:14px; min-height:18px; }
+</style>
+</head>
+<body>
+<header><span class="dot" id="dot"></span><h1>Room light</h1></header>
+
+<div class="card alarm" id="alarm">
+  <div class="time" id="clock">--:--</div>
+  <div class="name" id="aname">Alarm</div>
+  <button class="big" id="stop">Stop alarm</button>
+  <button class="big ghost" id="snooze">Snooze 9 min</button>
+</div>
+
+<div class="card">
+  <div class="power">
+    <button class="knob" id="power" aria-label="Turn the light on or off"></button>
+    <div><div class="val" id="bval">–</div><div class="sub" id="mode">connecting…</div></div>
+  </div>
+  <label>Brightness <b id="blabel"></b></label>
+  <input type="range" id="bri" min="1" max="100" step="1">
+  <label>Temperature <b id="klabel"></b></label>
+  <input type="range" id="cct" min="2700" max="6500" step="50">
+</div>
+
+<div class="card">
+  <div class="muted" style="margin-bottom:10px">Scenes</div>
+  <div class="chips" id="scenes"></div>
+</div>
+
+<div class="card">
+  <div class="row"><div><div>Daily schedule</div><div class="muted" id="sched">–</div></div><button class="switch" id="schedsw" aria-label="Schedule on or off"></button></div>
+  <div class="row" style="margin-top:14px"><div><div>Next alarm</div><div class="muted" id="next">–</div></div></div>
+</div>
+<div class="err" id="err"></div>
+
+<script>
+const tok = new URLSearchParams(location.search).get("token") || "";
+const q = (p, extra = {}) => p + "?" + new URLSearchParams({ ...extra, ...(tok ? { token: tok } : {}) });
+const $ = id => document.getElementById(id);
+let st = {}, sending = 0;
+
+async function api(path, extra) {
+  try {
+    const r = await fetch(q(path, extra));
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    $("err").textContent = "";
+    return j;
+  } catch (e) { $("err").textContent = String(e.message || e); }
+}
+
+function kelvinRGB(k) {
+  const t = k / 100;
+  const r = t <= 66 ? 255 : 329.7 * Math.pow(t - 60, -0.1332);
+  const g = t <= 66 ? 99.47 * Math.log(t) - 161.12 : 288.12 * Math.pow(t - 60, -0.0755);
+  const b = t >= 66 ? 255 : (t <= 19 ? 0 : 138.52 * Math.log(t - 10) - 305.04);
+  return [r, g, b].map(v => Math.round(Math.min(255, Math.max(0, v)))).join(",");
+}
+
+function render() {
+  const on = !!st.on, b = st.brightness || st.last_on_brightness || 0;
+  document.documentElement.style.setProperty("--glow",
+    st.mode === "hsi" ? hslToRgb(st.hue || 0, (st.sat || 100) / 100) : kelvinRGB(st.cct || 4000));
+  document.body.style.setProperty("--lvl", on ? b / 100 : 0);
+  $("power").classList.toggle("on", on);
+  $("bval").textContent = on ? b + "%" : "Off";
+  $("mode").textContent = st.mode === "hsi" ? `Color ${Math.round(st.hue || 0)}°` : `${st.cct || 4000} K white`;
+  if (!sending) { $("bri").value = st.last_on_brightness || b || 50; $("cct").value = st.cct || 4000; }
+  $("blabel").textContent = $("bri").value + "%";
+  $("klabel").textContent = $("cct").value + " K";
+}
+
+function hslToRgb(h, s) {
+  const l = 0.6, a = s * Math.min(l, 1 - l);
+  const f = n => { const k = (n + h / 30) % 12; return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
+  return `${f(0)},${f(8)},${f(4)}`;
+}
+
+function showAlarm(a) {
+  const active = a.state === "ringing" || a.state === "snoozed" || a.state === "dawn";
+  $("alarm").classList.toggle("show", active);
+  $("aname").textContent = a.state === "snoozed" ? "Snoozed" : (a.state === "dawn" ? "Sunrise is starting" : (a.name || "Alarm"));
+  $("snooze").style.display = a.state === "snoozed" ? "none" : "block";
+  if (active && navigator.vibrate) navigator.vibrate(30);
+}
+
+setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }, 1000);
+
+// Instant updates: the same push stream the Macs use.
+function stream() {
+  const es = new EventSource(q("/events", { device: "Phone web" }));
+  es.onopen = () => $("dot").classList.add("on");
+  es.onerror = () => { $("dot").classList.remove("on"); };
+  es.onmessage = m => {
+    const e = JSON.parse(m.data);
+    if (e.type === "state") { st = e.state; render(); }
+    if (e.type === "alarm") showAlarm(e);
+  };
+}
+
+let t;
+function debounced(fn) { sending = 1; clearTimeout(t); t = setTimeout(async () => { await fn(); sending = 0; }, 120); }
+$("bri").oninput = () => { $("blabel").textContent = $("bri").value + "%"; debounced(() => api("/set", { brightness: $("bri").value })); };
+$("cct").oninput = () => { $("klabel").textContent = $("cct").value + " K"; debounced(() => api("/set", { cct: $("cct").value })); };
+$("power").onclick = () => api(st.on ? "/off" : "/on");
+$("stop").onclick = () => api("/alarm/stop");
+$("snooze").onclick = () => api("/alarm/snooze");
+$("schedsw").onclick = async () => {
+  const on = !$("schedsw").classList.contains("on");
+  $("schedsw").classList.toggle("on", on);
+  await api("/schedule/enable", { on: on ? 1 : 0 }); loadMeta();
+};
+
+async function loadMeta() {
+  const sc = await api("/scenes");
+  if (sc) $("scenes").innerHTML = Object.keys(sc).map(n => `<button class="chip" data-n="${n.replace(/"/g, "&quot;")}">${n.replace(/</g, "&lt;")}</button>`).join("");
+  const s = await api("/schedule");
+  if (s) { $("schedsw").classList.toggle("on", !!s.enabled); $("sched").textContent = s.enabled ? `Now ${s.today.now.level}% · ${s.today.now.kelvin} K · sunset ${s.today.sunset}` : "Off"; }
+  const a = await api("/alarms");
+  if (a) {
+    const n = (a.next || []).filter(x => x.next).map(x => new Date(x.next)).sort((x, y) => x - y)[0];
+    $("next").textContent = n ? n.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "None set";
+    if (a.active) showAlarm(a.active);
+  }
+}
+$("scenes").onclick = e => { const b = e.target.closest(".chip"); if (b) api("/scene", { name: b.dataset.n }); };
+
+api("/state").then(s => { if (s) { st = s; render(); } });
+loadMeta(); stream();
+setInterval(loadMeta, 60000);
+</script>
+</body>
+</html>

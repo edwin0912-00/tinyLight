@@ -1,0 +1,24 @@
+[project]
+name = "tinylight"
+version = "0.1.0"
+description = "Run any Bluetooth light from AI agents (MCP), Apple Home, a macOS menu bar app, a daily curve and sunrise alarms."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = ["bleak>=0.22", "cryptography>=42"]
+
+[project.optional-dependencies]
+homekit = ["HAP-python>=5.0"]
+
+[project.scripts]
+tinylight = "tinylight.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["tinylight*"]
+
+[tool.setuptools.package-data]
+tinylight = ["AGENT-RULES.md"]
