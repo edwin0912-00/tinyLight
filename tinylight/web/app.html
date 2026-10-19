@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="Light">
 <meta name="theme-color" content="#111113">
 <title>Room light</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   :root { --bg:#111113; --card:#1c1c1f; --line:#2c2c30; --text:#f2f2f2; --muted:#9a9aa0; --glow:255,200,140; --accent:#ff9f43; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -47,10 +49,40 @@
   .switch::after { content:""; position:absolute; top:3px; left:3px; width:26px; height:26px; border-radius:50%; background:#fff; transition:transform .3s cubic-bezier(.3,1.4,.5,1); }
   .switch.on { background:#34c759; } .switch.on::after { transform:translateX(20px); }
   .err { color:#ff6b6b; font-size:14px; min-height:18px; }
+  .perm { border-color:rgba(120,170,255,.45); background:linear-gradient(180deg,rgba(90,140,255,.14),var(--card)); }
+  .perm h2 { font-size:18px; margin:0 0 6px; font-weight:600; }
+  .perm p { margin:0 0 14px; color:var(--muted); font-size:15px; }
+  .perm .big { background:#6ea8ff; color:#06132b; }
+  .checks { display:grid; gap:6px; margin-top:12px; font-size:14px; color:var(--muted); }
+  .checks b { color:var(--text); font-weight:500; }
+  .ok { color:#34c759 !important; } .no { color:#ff9f43 !important; }
+  .btns { display:flex; gap:8px; margin-top:14px; }
+  .btns .chip { flex:1; text-align:center; }
+  .al { border-top:1px solid var(--line); padding:12px 0 4px; }
+  .al:first-child { border-top:0; padding-top:4px; }
+  .al .top { display:flex; align-items:center; gap:10px; }
+  .al input[type=time] { background:#232327; color:var(--text); border:1px solid var(--line); border-radius:10px; font-size:24px; font-weight:600; padding:4px 8px; font-variant-numeric:tabular-nums; }
+  .al .days { display:flex; gap:5px; margin:10px 0 8px; }
+  .al .days button { width:36px; height:36px; border-radius:50%; border:1px solid var(--line); background:#232327; color:var(--muted); font-size:13px; }
+  .al .days button.on { background:rgba(255,159,67,.3); color:var(--text); border-color:rgba(255,159,67,.6); }
+  .al select, .row select { background:#232327; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:8px; font-size:15px; max-width:48%; }
+  .al .opts { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .icon { background:#232327; border:1px solid var(--line); color:var(--text); border-radius:10px; padding:8px 11px; font-size:15px; }
+  .spacer { flex:1; }
 </style>
 </head>
 <body>
 <header><span class="dot" id="dot"></span><h1>Room light</h1></header>
+
+<div class="card perm" id="perm">
+  <h2>Sound and microphone</h2>
+  <p>Allow them once so this phone can play the alarm in sync with your Macs, answer pings and help calibrate by listening at your bed.</p>
+  <button class="big" id="allow">Allow sound and microphone</button>
+  <div class="checks">
+    <div>Sound: <b id="sndst">not allowed yet</b></div>
+    <div>Microphone: <b id="micst">not allowed yet</b></div>
+  </div>
+</div>
 
 <div class="card alarm" id="alarm">
   <div class="time" id="clock">--:--</div>
@@ -78,6 +110,27 @@
 <div class="card">
   <div class="row"><div><div>Daily schedule</div><div class="muted" id="sched">–</div></div><button class="switch" id="schedsw" aria-label="Schedule on or off"></button></div>
   <div class="row" style="margin-top:14px"><div><div>Next alarm</div><div class="muted" id="next">–</div></div></div>
+</div>
+<div class="card">
+  <div class="row"><div>Alarms <span class="muted">morning only, 04:00-11:59</span></div><button class="icon" id="addal">+ Add</button></div>
+  <div id="alarms" style="margin-top:8px"></div>
+  <div class="row" style="margin-top:12px">
+    <span class="muted">Stops by itself after</span>
+    <select id="ringmin"><option value="1">1 min</option><option value="3">3 min</option><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option></select>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <select id="testmode"></select>
+    <button class="icon" id="testal">Test 45 s</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="muted" style="margin-bottom:4px">Sound on this phone</div>
+  <div class="muted" id="audst">Alarm sound plays here while this page is open on screen.</div>
+  <div class="btns">
+    <button class="chip" id="pingall">Ping all devices</button>
+    <button class="chip" id="calib">Calibrate here</button>
+  </div>
 </div>
 <div class="err" id="err"></div>
 
@@ -136,13 +189,15 @@ setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString([], {
 
 // Instant updates: the same push stream the Macs use.
 function stream() {
-  const es = new EventSource(q("/events", { device: "Phone web" }));
+  const es = new EventSource(q("/events", { device: ME }));
   es.onopen = () => $("dot").classList.add("on");
   es.onerror = () => { $("dot").classList.remove("on"); };
   es.onmessage = m => {
     const e = JSON.parse(m.data);
     if (e.type === "state") { st = e.state; render(); }
-    if (e.type === "alarm") showAlarm(e);
+    if (e.type === "alarm") { showAlarm(e); player.update(e); }
+    if (e.type === "ping" && (e.device === "all" || e.device === ME)) chime(e.volume || 0.8);
+    if (e.type === "calibrate") calibrateEvent(e);
   };
 }
 
@@ -174,6 +229,277 @@ async function loadMeta() {
 $("scenes").onclick = e => { const b = e.target.closest(".chip"); if (b) api("/scene", { name: b.dataset.n }); };
 
 api("/state").then(s => { if (s) { st = s; render(); } });
+// ---------------------------------------------------------------------------------------------
+// Audio on the phone. Browsers only play sound after a tap, and Safari gives the microphone only to
+// HTTPS pages, so the permission card comes first.
+const ME = localStorage.getItem("tl_name") || "Phone web";
+let ctx = null, keep = null, serverOffset = 0, dev = { offset_ms: 0, gain: 1 };
+const serverNow = () => Date.now() / 1000 + serverOffset;
+
+function silentWav(seconds) {          // looping silent <audio> keeps the iOS audio session alive
+  const sr = 8000, n = sr * seconds, b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVEfmt "); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
+  return URL.createObjectURL(new Blob([b], { type: "audio/wav" }));
+}
+
+async function unlockAudio() {
+  ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+  await ctx.resume();
+  const src = ctx.createBufferSource(); src.buffer = ctx.createBuffer(1, 1, 22050); src.connect(ctx.destination); src.start();
+  if (!keep) { keep = new Audio(silentWav(2)); keep.loop = true; keep.setAttribute("playsinline", ""); }
+  try { await keep.play(); } catch (e) {}
+  $("sndst").textContent = "allowed"; $("sndst").className = "ok";
+  localStorage.setItem("tl_sound", "1");
+}
+
+async function askMic() {
+  if (!window.isSecureContext || !navigator.mediaDevices) {
+    $("micst").textContent = "needs the HTTPS link (Safari blocks the mic on plain http)"; $("micst").className = "no";
+    return false;
+  }
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    s.getTracks().forEach(t => t.stop());
+    $("micst").textContent = "allowed"; $("micst").className = "ok";
+    localStorage.setItem("tl_mic", "1");
+    return true;
+  } catch (e) { $("micst").textContent = "denied - allow it in Safari settings"; $("micst").className = "no"; return false; }
+}
+
+$("allow").onclick = async () => {
+  await unlockAudio();
+  await askMic();
+  chime(0.5);
+  setTimeout(() => $("perm").style.display = "none", 1800);
+};
+if (localStorage.getItem("tl_sound")) {
+  // A page reload still needs one tap to unlock audio; keep the card small but visible.
+  $("allow").textContent = "Tap to re-enable sound";
+}
+
+async function syncClock() {
+  let best = null;
+  for (let i = 0; i < 8; i++) {
+    const t0 = Date.now() / 1000; const j = await api("/time"); const t1 = Date.now() / 1000;
+    if (j && (!best || t1 - t0 < best.rtt)) best = { rtt: t1 - t0, off: j.t - (t0 + t1) / 2 };
+  }
+  if (best) serverOffset = best.off;
+  const d = await api("/devices");
+  if (d && d[ME]) dev = { offset_ms: d[ME].offset_ms || 0, gain: d[ME].gain || 1 };
+}
+
+// Same AE-style easing as the bridge (tinylight/schedule.py bezier).
+function bezier(p, x1, x2) {
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 30; i++) { const t = (lo + hi) / 2, x = 3 * (1 - t) ** 2 * t * x1 + 3 * (1 - t) * t * t * x2 + t ** 3; if (x < p) lo = t; else hi = t; }
+  const t = (lo + hi) / 2; return 3 * (1 - t) * t * t + t ** 3;
+}
+function curveAt(pts, x) {
+  const s = [...pts].sort((a, b) => a.t - b.t);
+  if (!s.length || x < s[0].t) return null;
+  for (let i = 0; i < s.length - 1; i++) {
+    const a = s[i], b = s[i + 1];
+    if (a.t <= x && x < b.t) {
+      const p = (x - a.t) / (b.t - a.t);
+      const q = a.hold ? 0 : bezier(p, (a.ease_out ?? 50) / 100, 1 - (b.ease_in ?? 50) / 100);
+      return a.volume + (b.volume - a.volume) * q;
+    }
+  }
+  return s[s.length - 1].volume;
+}
+
+const buffers = {};
+async function sound(name) {
+  if (!buffers[name]) {
+    const r = await fetch(q(`/sounds/${encodeURIComponent(name)}.m4a`));
+    buffers[name] = await ctx.decodeAudioData(await r.arrayBuffer());
+  }
+  return buffers[name];
+}
+
+// Alarm player: position and volume follow the bridge clock, like the Mac app.
+const player = {
+  ev: null, src: null, gain: null, name: null, timer: null,
+  update(e) {
+    const active = ["dawn", "ringing", "snoozed"].includes(e.state) && (e.sound_points || []).length;
+    if (!active || !ctx) { this.stop(); return; }
+    if (this.ev && this.ev.key !== e.key) this.stop();
+    this.ev = e;
+    if (!this.timer) this.timer = setInterval(() => this.tick(), 100);
+  },
+  current(x) {
+    let n = this.ev.sound;
+    [...this.ev.sound_points].sort((a, b) => a.t - b.t).forEach(p => { if (p.t <= x && p.sound) n = p.sound; });
+    return n;
+  },
+  async tick() {
+    const e = this.ev; if (!e || !ctx) return;
+    const out = ctx.outputLatency || ctx.baseLatency || 0;
+    const now = serverNow() + out - dev.offset_ms / 1000;
+    const x = (now - e.T) / 60 * (e.scale || 1);
+    let v = e.state === "snoozed" ? null : curveAt(e.sound_points, x);
+    if (v !== null && e.resume_at) v *= Math.min(1, Math.max(0, (now - e.resume_at) / 30));
+    const name = v === null ? null : this.current(x);
+    if (name && name !== this.name) {
+      this.name = name;
+      const buf = await sound(name);
+      if (this.src) this.src.stop();
+      this.gain = ctx.createGain(); this.gain.gain.value = 0; this.gain.connect(ctx.destination);
+      this.src = ctx.createBufferSource(); this.src.buffer = buf; this.src.loop = true; this.src.connect(this.gain);
+      const pts = e.sound_points.filter(p => p.sound === name).map(p => p.t);
+      const startX = pts.length ? Math.min(...pts) : Math.min(...e.sound_points.map(p => p.t));
+      this.src.start(0, (Math.max(0, (x - startX) * 60 / (e.scale || 1))) % buf.duration);
+      $("audst").textContent = `Playing ${name}`;
+    }
+    if (this.gain) this.gain.gain.setTargetAtTime(v === null ? 0 : Math.min(1, (v / 100) ** 2 * dev.gain), ctx.currentTime, 0.05);
+  },
+  stop() {
+    clearInterval(this.timer); this.timer = null; this.ev = null; this.name = null;
+    if (this.gain) { this.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.1); const s = this.src; setTimeout(() => s && s.stop(), 600); }
+    this.src = null; this.gain = null;
+    $("audst").textContent = "Alarm sound plays here while this page is open on screen.";
+  },
+};
+
+function chime(volume) {                // ping: two soft bell tones + a short vibration
+  if (navigator.vibrate) navigator.vibrate([60, 60, 60]);
+  if (!ctx) { $("err").textContent = "Ping received. Tap 'Allow sound' to hear pings."; return; }
+  [[880, 0], [1320, 0.18]].forEach(([f, d]) => {
+    const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + d;
+    o.type = "sine"; o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(volume * 0.6, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
+    o.start(t); o.stop(t + 1.3);
+  });
+}
+$("pingall").onclick = () => api("/ping");
+
+// Calibration: this phone plays its clicks in its slot and, when it is the recorder, listens at the bed.
+async function calibrateEvent(e) {
+  if (!ctx) return;
+  const out = ctx.outputLatency || ctx.baseLatency || 0;
+  const mine = (e.slots || []).find(s => s.device === ME);
+  if (mine) for (let k = 0; k < e.clicks; k++) {
+    const at = mine.at + k * e.interval, t = ctx.currentTime + (at - serverNow()) - out;
+    if (t <= ctx.currentTime) continue;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = 2500; o.connect(g); g.connect(ctx.destination);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.9, t + 0.002); g.gain.linearRampToValueAtTime(0, t + 0.004);
+    o.start(t); o.stop(t + 0.01);
+  }
+  if (e.recorder !== ME) return;
+  $("audst").textContent = "Listening… keep the room quiet";
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  const srcN = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(1024, 1, 1), env = [];
+  const mute = ctx.createGain(); mute.gain.value = 0;
+  proc.onaudioprocess = ev => {
+    const d = ev.inputBuffer.getChannelData(0), sr = ev.inputBuffer.sampleRate;
+    const t0 = serverNow() - d.length / sr;      // block just arrived: its first sample is one block old
+    for (let i = 0; i < d.length; i += 48) {
+      let pk = 0; for (let k = i; k < Math.min(i + 48, d.length); k++) pk = Math.max(pk, Math.abs(d[k]));
+      env.push([t0 + i / sr, pk]);
+    }
+  };
+  srcN.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+  const last = Math.max(...e.slots.map(s => s.at)) + e.clicks * e.interval + 1.5;
+  setTimeout(async () => {
+    proc.disconnect(); stream.getTracks().forEach(t => t.stop());
+    const r = await fetch(q("/calibrate/result"), { method: "POST", body: JSON.stringify({ recorder: ME, slots: e.slots, clicks: e.clicks, interval: e.interval, env }) });
+    const j = await r.json();
+    const found = Object.entries(j.devices || {}).map(([k, v]) => `${k.split(" ")[0]} ${Math.round(v.delay * 1000)} ms`);
+    $("audst").textContent = found.length ? "Calibrated: " + found.join(", ") : "Nothing heard. Turn the volume up and retry.";
+    syncClock();
+  }, Math.max(1000, (last - serverNow()) * 1000));
+}
+$("calib").onclick = async () => {
+  if (!ctx) { $("err").textContent = "Allow sound and microphone first."; return; }
+  if (!(await askMic())) return;
+  await syncClock();
+  api("/calibrate", { recorder: ME });
+};
+
+// ---------------------------------------------------------------------------------------------
+// Alarms: full control, saved to the bridge (POST /alarms), same data as the Mac app and agents.
+let AL = { alarms: [], modes: {}, sounds: [], ring_minutes: 5 }, saveT;
+const DAYS = ["M", "T", "W", "T", "F", "S", "S"];
+
+async function loadAlarms() {
+  const a = await api("/alarms"); if (!a) return;
+  AL = { alarms: a.alarms || [], modes: a.modes || {}, sounds: a.sounds || [], ring_minutes: a.ring_minutes || 5, next: a.next || [] };
+  $("ringmin").value = String(AL.ring_minutes);
+  $("testmode").innerHTML = Object.entries(AL.modes).map(([k, m]) => `<option value="${k}">${m.name}</option>`).join("");
+  renderAlarms();
+}
+
+function renderAlarms() {
+  const opt = (list, cur) => list.map(([v, t]) => `<option value="${v}"${v === cur ? " selected" : ""}>${t}</option>`).join("");
+  $("alarms").innerHTML = AL.alarms.length ? AL.alarms.map((a, i) => `
+    <div class="al" data-i="${i}">
+      <div class="top">
+        <input type="time" value="${a.time}" min="04:00" max="11:59" data-f="time">
+        <span class="spacer"></span>
+        <button class="switch${a.enabled !== false ? " on" : ""}" data-f="enabled" aria-label="Alarm on or off"></button>
+      </div>
+      <div class="days">${DAYS.map((d, k) => `<button class="${(a.days || []).includes(k) ? "on" : ""}" data-day="${k}">${d}</button>`).join("")}</div>
+      <div class="opts">
+        <select data-f="mode">${opt(Object.entries(AL.modes).map(([k, m]) => [k, m.name]), a.mode)}</select>
+        <select data-f="sound">${opt(AL.sounds.map(n => [n, n]), a.sound)}</select>
+        <button class="icon" data-f="listen" aria-label="Listen">▶</button>
+        <button class="icon" data-f="del" aria-label="Delete alarm">✕</button>
+      </div>
+    </div>`).join("") : `<div class="muted">No alarms yet.</div>`;
+}
+
+function saveAlarms() {
+  clearTimeout(saveT);
+  saveT = setTimeout(async () => {
+    const r = await fetch(q("/alarms"), { method: "POST", body: JSON.stringify({ alarms: AL.alarms, ring_minutes: Number($("ringmin").value) }) });
+    const j = await r.json();
+    if (j.error) { $("err").textContent = j.error; loadAlarms(); } else { $("err").textContent = ""; loadMeta(); }
+  }, 400);
+}
+
+$("alarms").addEventListener("click", async e => {
+  const row = e.target.closest(".al"); if (!row) return;
+  const a = AL.alarms[+row.dataset.i];
+  if (e.target.dataset.day !== undefined) {
+    const d = +e.target.dataset.day; a.days = a.days || [];
+    a.days = a.days.includes(d) ? a.days.filter(x => x !== d) : [...a.days, d].sort();
+    e.target.classList.toggle("on"); saveAlarms();
+  } else if (e.target.dataset.f === "enabled") {
+    a.enabled = !(a.enabled !== false); e.target.classList.toggle("on", a.enabled); saveAlarms();
+  } else if (e.target.dataset.f === "del") {
+    AL.alarms.splice(+row.dataset.i, 1); renderAlarms(); saveAlarms();
+  } else if (e.target.dataset.f === "listen") {
+    if (!ctx) { $("err").textContent = "Allow sound first."; return; }
+    if (window._prev) { window._prev.stop(); window._prev = null; e.target.textContent = "▶"; return; }
+    const s = ctx.createBufferSource(), g = ctx.createGain(); s.buffer = await sound(a.sound); g.gain.value = 0.35;
+    s.connect(g); g.connect(ctx.destination); s.start(); window._prev = s; e.target.textContent = "■";
+    setTimeout(() => { if (window._prev === s) { s.stop(); window._prev = null; e.target.textContent = "▶"; } }, 15000);
+  }
+});
+$("alarms").addEventListener("change", e => {
+  const row = e.target.closest(".al"); if (!row) return;
+  const a = AL.alarms[+row.dataset.i], f = e.target.dataset.f;
+  if (f === "time") {
+    const v = e.target.value;
+    if (v < "04:00" || v > "11:59") { $("err").textContent = "Alarms are morning only: 04:00-11:59."; e.target.value = a.time; return; }
+    a.time = v;
+  } else if (f === "mode" || f === "sound") a[f] = e.target.value;
+  saveAlarms();
+});
+$("addal").onclick = () => {
+  AL.alarms.push({ id: "a" + Math.random().toString(36).slice(2, 8), time: "07:30", days: [0, 1, 2, 3, 4], enabled: true,
+                   mode: "gentle", sound: AL.sounds[0] || "birds-spain" });
+  renderAlarms(); saveAlarms();
+};
+$("ringmin").onchange = saveAlarms;
+$("testal").onclick = () => api("/alarm/test", { mode: $("testmode").value, seconds: 45, sound: (AL.alarms[0] || {}).sound || AL.sounds[0] || "" });
+
+loadAlarms(); setInterval(loadAlarms, 60000);
+syncClock(); setInterval(syncClock, 60000);
 loadMeta(); stream();
 setInterval(loadMeta, 60000);
 </script>

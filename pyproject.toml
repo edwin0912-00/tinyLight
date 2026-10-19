@@ -21,4 +21,4 @@ build-backend = "setuptools.build_meta"
 include = ["tinylight*"]
 
 [tool.setuptools.package-data]
-tinylight = ["AGENT-RULES.md"]
+tinylight = ["AGENT-RULES.md", "web/*"]

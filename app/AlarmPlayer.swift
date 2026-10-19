@@ -246,6 +246,36 @@ final class AlarmPlayer {
         }
     }
 
+    /// Ping: two soft bell tones (880 + 1320 Hz) on the built-in speakers.
+    private var chimePlayer: AVAudioPlayer?
+    func chime(volume: Double) {
+        let sr = 48000.0, n = Int(sr * 1.5)
+        var pcm = [Int16](repeating: 0, count: n)
+        for (f, start) in [(880.0, 0.0), (1320.0, 0.18)] {
+            let s0 = Int(start * sr)
+            for i in 0..<(n - s0) {
+                let t = Double(i) / sr
+                let env = min(1, t / 0.02) * exp(-t * 4)
+                let v = Double(pcm[s0 + i]) + 12000 * env * sin(2 * Double.pi * f * t)
+                pcm[s0 + i] = Int16(max(-32767, min(32767, v)))
+            }
+        }
+        var wav = Data()
+        func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { wav.append(contentsOf: $0) } }
+        func u16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { wav.append(contentsOf: $0) } }
+        wav.append(contentsOf: Array("RIFF".utf8)); u32(UInt32(36 + n * 2)); wav.append(contentsOf: Array("WAVEfmt ".utf8))
+        u32(16); u16(1); u16(1); u32(UInt32(sr)); u32(UInt32(sr) * 2); u16(2); u16(16)
+        wav.append(contentsOf: Array("data".utf8)); u32(UInt32(n * 2))
+        pcm.withUnsafeBytes { wav.append(contentsOf: $0) }
+        let f = cacheURL("chime.wav")
+        try? wav.write(to: f)
+        guard let p = try? AVAudioPlayer(contentsOf: f) else { return }
+        p.currentDevice = deviceUID
+        p.volume = Float(volume)
+        p.play()
+        chimePlayer = p
+    }
+
     /// Preview a sound locally (Alarm tab ▶).
     private var previewing: String?
     func togglePreview(_ name: String) -> Bool {

@@ -415,6 +415,16 @@ def main():
             u = urlparse(self.path)
             q = {k: v[-1] for k, v in parse_qs(u.query).items()}
             local = self.client_address[0] in ("127.0.0.1", "::1")
+            if u.path in ("/manifest.webmanifest", "/icon.png", "/apple-touch-icon.png", "/favicon.ico"):
+                name = "icon.png" if u.path == "/favicon.ico" else u.path[1:]
+                data = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", name), "rb").read()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/manifest+json" if name.endswith("manifest") else "image/png")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "max-age=86400")
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if not self._authed(q):
                 return self._reply(401, {"error": "token required"})
             q.pop("token", None)
@@ -427,6 +437,17 @@ def main():
                 self.end_headers()
                 self.wfile.write(page)
                 return
+            if u.path == "/ping":
+                # Short sound on one device or all of them: find a phone, test speakers, wake someone.
+                with SUBS_LOCK:
+                    online = sorted(k for k, n in ONLINE.items() if n > 0)
+                target = q.get("device", "all")
+                if target != "all" and target not in online:
+                    return self._reply(404, {"error": "device not online", "online": online})
+                ev = {"type": "ping", "device": target, "sound": q.get("sound", "chime"),
+                      "volume": max(0.05, min(1.0, float(q.get("volume", 0.8))))}
+                publish(ev)
+                return self._reply(200, {**ev, "online": online})
             if u.path == "/time":
                 return self._reply(200, {"t": time.time()})
             if u.path == "/devices":

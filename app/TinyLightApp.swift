@@ -97,6 +97,7 @@ final class Light: ObservableObject {
     @Published var serverOffset: Double = 0
     var onAlarm: (([String: Any]) -> Void)?
     var onCalibrate: (([String: Any]) -> Void)?
+    var onPing: (([String: Any]) -> Void)?
     var serverNow: Double { Date().timeIntervalSince1970 + serverOffset }
     var baseURL: URL { base }
     var authToken: String? { token }
@@ -130,6 +131,7 @@ final class Light: ObservableObject {
                         if ev["type"] as? String == "state", let st = ev["state"] as? [String: Any] { applyState(st) }
                         if ev["type"] as? String == "alarm" { onAlarm?(ev) }
                         if ev["type"] as? String == "calibrate" { onCalibrate?(ev) }
+                        if ev["type"] as? String == "ping" { onPing?(ev) }
                     }
                 } catch {}
             }

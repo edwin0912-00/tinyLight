@@ -98,6 +98,11 @@ final class AlarmCenter: ObservableObject {
         light = l
         player.light = l
         l.onAlarm = { [weak self] ev in self?.handle(ev) }
+        l.onPing = { [weak self] ev in
+            let target = ev["device"] as? String ?? "all"
+            guard let self, target == "all" || target == self.player.deviceName else { return }
+            self.player.chime(volume: (ev["volume"] as? NSNumber)?.doubleValue ?? 0.8)
+        }
         Task { await load() }
     }
 

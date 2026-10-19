@@ -1,0 +1,10 @@
+{
+  "name": "Room light",
+  "short_name": "Light",
+  "start_url": "./app",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#111113",
+  "theme_color": "#111113",
+  "icons": [{"src": "icon.png", "sizes": "512x512", "type": "image/png"}]
+}
