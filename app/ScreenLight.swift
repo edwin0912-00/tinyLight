@@ -1,5 +1,5 @@
 // Screen sunrise: the built-in display becomes a second light. While an alarm runs it follows the lamp:
-// display brightness rises with the lamp level and a full-screen window shows the lamp's warm colour.
+// display brightness rises with the lamp level (100 % while ringing) and a full-screen window shows the lamp's warm colour.
 // Brightness uses the private DisplayServices API (no permission needed; Apple may change it).
 // Limits: a closed lid has no screen, and nothing can draw over the lock screen.
 import AppKit
@@ -18,6 +18,8 @@ final class ScreenLight {
     private var saved: Float?
     private var assertion: IOPMAssertionID = 0
     private var alarmActive = false
+    private var ringing = false
+    private var lastLamp: [String: Any]?
     private var preview: Timer?
 
     init() {
@@ -39,18 +41,22 @@ final class ScreenLight {
     // Alarm event: dawn / ringing / snoozed keep the screen light on; idle restores everything.
     func alarm(_ state: String) {
         alarmActive = ["dawn", "ringing", "snoozed"].contains(state)
+        let wasRinging = ringing
+        ringing = state == "ringing"
         if !alarmActive && preview == nil { end() }
+        if ringing != wasRinging, let s = lastLamp { lamp(s) }  // jump to full at once, not at the next lamp event
     }
 
     // Lamp state event (brightness 0-100, cct or hue). Only acts while an alarm runs.
     func lamp(_ s: [String: Any]) {
+        lastLamp = s
         guard alarmActive, enabled, preview == nil else { return }
         let on = s["on"] as? Bool ?? true
         let level = on ? ((s["brightness"] as? NSNumber)?.doubleValue ?? 0) / 100 : 0
         let color = (s["mode"] as? String) == "hsi"
             ? NSColor(hue: CGFloat(((s["hue"] as? NSNumber)?.doubleValue ?? 30) / 360), saturation: 0.85, brightness: 1, alpha: 1)
             : kelvinColor((s["cct"] as? NSNumber)?.doubleValue ?? 2700)
-        show(level: level, color: color)
+        show(level: ringing ? 1 : level, color: color)  // ringing: full screen brightness (owner)
     }
 
     /// Local preview: 15 s from dark amber to full warm light, then back. No lamp, no sound.
