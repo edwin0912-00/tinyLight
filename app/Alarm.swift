@@ -86,6 +86,7 @@ final class AlarmCenter: ObservableObject {
     @Published var state = "idle"          // idle | dawn | ringing | snoozed
     @Published var activeName = ""
     @Published var snoozeUntil: Date?
+    @Published var snoozeMinutes = 10
     @Published var editing = false
     @Published var error: String?
     let player = AlarmPlayer()
@@ -122,6 +123,7 @@ final class AlarmCenter: ObservableObject {
     func load() async {
         guard let l = light, let j = await l.get(l.url("/alarms")) else { return }
         sounds = j["sounds"] as? [String] ?? []
+        snoozeMinutes = (j["snooze_minutes"] as? NSNumber)?.intValue ?? 10
         if saveTask == nil {
             alarms = (j["alarms"] as? [[String: Any]] ?? []).map { a in
                 let hm = (a["time"] as? String ?? "07:00").split(separator: ":").compactMap { Int($0) }
@@ -216,7 +218,7 @@ struct RingView: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
             HStack(spacing: 10) {
-                Button("Snooze 9 min") { center.snooze() }
+                Button("Snooze \(center.snoozeMinutes) min") { center.snooze() }
                     .keyboardShortcut(.space, modifiers: [])
                     .controlSize(.large)
                 Button("Stop") { center.stop() }

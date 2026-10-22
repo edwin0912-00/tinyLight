@@ -137,6 +137,8 @@ class Light:
         self.alarm_stopped: set = set()
         self.alarm_snooze_until = 0.0
         self.alarm_resume_at = None
+        self.alarm_fade_in = 30.0
+        self.alarm_snooze_at, self.alarm_snooze_level, self.alarm_wake_at = 0.0, 0, None
         self.alarm_test = None
         self.alarm_light_override = False
 
@@ -220,7 +222,7 @@ class Light:
         if self.alarm.get("key"):
             self.alarm_stopped.add(self.alarm["key"])
         self.alarm_test = None
-        self.alarm_snooze_until, self.alarm_resume_at = 0.0, None
+        self.alarm_snooze_until, self.alarm_resume_at, self.alarm_wake_at = 0.0, None, None
         self.alarm_light_override = False
         self.alarm = {"state": "idle", "reason": reason}
         publish(self.alarm_event())
@@ -264,15 +266,16 @@ class Light:
                     last_light = None
                     continue
                 snoozed = now < self.alarm_snooze_until
-                if self.alarm_resume_at and now > self.alarm_resume_at + 60:
-                    self.alarm_resume_at = None
+                if self.alarm_resume_at and now > self.alarm_resume_at + max(60, self.alarm_fade_in):
+                    self.alarm_resume_at, self.alarm_wake_at = None, None
                 ringing = alarms.sound_at(cur["mode"], x, cur["sound"]) is not None
                 info = {"state": "snoozed" if snoozed else ("ringing" if ringing else "dawn"),
                         "id": cur["id"], "key": cur["key"], "T": cur["T"], "scale": cur["scale"],
                         "mode_id": cur["mode_id"], "name": cur["mode"].get("name"), "sound": cur["sound"],
                         "sound_points": cur["mode"].get("sound", []), "end": cur["end"],
                         "snooze_until": self.alarm_snooze_until if snoozed else None,
-                        "resume_at": self.alarm_resume_at}
+                        "resume_at": self.alarm_resume_at, "fade_in": self.alarm_fade_in,
+                        "snooze_at": self.alarm_snooze_at if snoozed else None, "wake_at": self.alarm_wake_at}
                 keys = ("state", "key", "snooze_until", "resume_at")
                 if any(info[k] != self.alarm.get(k) for k in keys):
                     self.alarm = info
@@ -285,6 +288,14 @@ class Light:
                 lv = max(0, round(v["level"]))
                 want = ({"brightness": lv, "hue": round(v["hue"]) % 360, "sat": round(v["sat"])} if "hue" in v
                         else {"brightness": lv, "cct": int(round(v["kelvin"] / 50) * 50)})
+                if snoozed:  # ease down to a third of the level at the snooze, over 20 s
+                    p = min(1.0, (now - self.alarm_snooze_at) * cur["scale"] / 20)
+                    lv = round(self.alarm_snooze_level * (1 - p * 2 / 3))
+                elif self.alarm_resume_at and now < self.alarm_resume_at + self.alarm_fade_in:
+                    p = (now - self.alarm_resume_at) / self.alarm_fade_in
+                    dim = self.alarm_snooze_level / 3
+                    lv = round(dim + (lv - dim) * p * p * (3 - 2 * p))  # smoothstep back up to the curve
+                want["brightness"] = lv
                 if lv == 0:
                     want = {"brightness": 0}
                 if want != last_light:
@@ -375,7 +386,7 @@ def main():
                     body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
                     if u.path == "/alarms":
                         cur = alarms.load()
-                        cur.update({k: body[k] for k in ("alarms", "modes", "ring_minutes") if k in body})
+                        cur.update({k: body[k] for k in ("alarms", "modes", "ring_minutes", "snooze_minutes") if k in body})
                         alarms.save(cur)
                         return self._reply(200, cur)
                     with open(DEVICES_FILE, "w") as f:
@@ -415,7 +426,7 @@ def main():
             u = urlparse(self.path)
             q = {k: v[-1] for k, v in parse_qs(u.query).items()}
             local = self.client_address[0] in ("127.0.0.1", "::1")
-            if u.path in ("/manifest.webmanifest", "/alarm.webmanifest", "/icon.png", "/apple-touch-icon.png", "/favicon.ico"):
+            if u.path in ("/manifest.webmanifest", "/icon.png", "/apple-touch-icon.png", "/favicon.ico"):
                 name = "icon.png" if u.path == "/favicon.ico" else u.path[1:]
                 data = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", name), "rb").read()
                 self.send_response(200)
@@ -429,9 +440,9 @@ def main():
                 return self._reply(401, {"error": "token required"})
             q.pop("token", None)
             if u.path in ("/", "/app", "/alarm"):
-                # Phone pages: /app = remote, /alarm = bedside night mode. Add both to the Home Screen.
+                # One phone page: remote by day, night mode inside it. /alarm is an old alias of /app.
                 page = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "web",
-                                         "alarm.html" if u.path == "/alarm" else "app.html"), "rb").read()
+                                         "app.html"), "rb").read()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(page)))
@@ -531,15 +542,22 @@ def main():
                     t = alarms.occurrence(a, m, now) if m else None
                     nxt.append({"id": a["id"], "next": t.isoformat() if t else None})
                 return self._reply(200, {**d, "sounds": alarms.sounds(), "next": nxt,
-                                         "active": light.alarm, "snooze_min": alarms.SNOOZE_MIN})
+                                         "active": light.alarm, "snooze_min": d["snooze_minutes"]})
             if u.path == "/alarm/stop":
                 light.stop_alarm()
                 return self._reply(200, light.alarm)
             if u.path == "/alarm/snooze":
                 if light.alarm.get("state") in ("dawn", "ringing"):
                     sc = light.alarm.get("scale", 1.0)
-                    light.alarm_snooze_until = time.time() + alarms.SNOOZE_MIN * 60 / sc
-                    light.alarm_resume_at = light.alarm_snooze_until
+                    mins = max(1.0, min(30.0, float(q.get("minutes") or alarms.load()["snooze_minutes"])))
+                    total = mins * 60 / sc
+                    rise = min(alarms.SNOOZE_RISE * 60 / sc, total * 0.6)
+                    now = time.time()
+                    light.alarm_snooze_at, light.alarm_snooze_level = now, int(light.state.get("brightness") or 0)
+                    light.alarm_snooze_until = light.alarm_resume_at = now + total - rise
+                    light.alarm_fade_in, light.alarm_wake_at = rise, now + total
+                    if light.alarm_test:  # a test alarm runs on past the snooze
+                        light.alarm_test["end"] += total
                 return self._reply(200, {"snooze_until": light.alarm_snooze_until})
             if u.path == "/alarm/test":
                 # Whole alarm compressed into `seconds` (default 90), like Philips demo mode.

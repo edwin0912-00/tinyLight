@@ -70,6 +70,22 @@ def test_bridge_with_dummy_driver():
             url + "/mcp", data=b'{"jsonrpc":"2.0","id":1,"method":"tools/list"}')))
         assert len(tools["result"]["tools"]) >= 12
         assert urllib.request.urlopen(url + "/app").status == 200
+        assert urllib.request.urlopen(url + "/alarm").read() == urllib.request.urlopen(url + "/app").read()
+        # Snooze in a 20 s test alarm (x60): 5 min = 5 s, dimmed, then the last 3 s rise again.
+        get = lambda p: json.load(urllib.request.urlopen(url + p))
+        get("/alarm/test?mode=quick&seconds=20")
+        time.sleep(8)
+        before = get("/state")["brightness"]
+        get("/alarm/snooze?minutes=5")
+        time.sleep(1.5)
+        a = get("/alarms")["active"]
+        assert a["state"] == "snoozed" and abs(a["wake_at"] - a["snooze_at"] - 5) < 0.1
+        after = get("/state")["brightness"]
+        assert after < before, (before, after)
+        time.sleep(3)
+        a = get("/alarms")["active"]
+        assert a["state"] in ("dawn", "ringing") and a["resume_at"] and a["fade_in"] == 3
+        get("/alarm/stop")
     finally:
         p.terminate()
 

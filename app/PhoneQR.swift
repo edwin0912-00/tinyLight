@@ -1,4 +1,4 @@
-// Phone links as QR codes: night mode (/alarm) and remote (/app). URLs come from the bridge (/links):
+// Phone link as a QR code: one page (/app) = remote, with night mode inside it. URLs come from the bridge (/links):
 // the permanent Tailscale HTTPS address when it exists, else the home-network address with the token.
 import SwiftUI
 import AppKit
@@ -18,17 +18,13 @@ func qrImage(_ text: String, size: CGFloat = 132) -> NSImage? {
 
 struct PhoneQRView: View {
     @EnvironmentObject var light: Light
-    @State private var night: String?
-    @State private var remote: String?
+    @State private var link: String?
     @State private var note = ""
     @State private var copied: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                card("Night mode", "Bedside alarm", night)
-                card("Remote", "Light and alarms", remote)
-            }
+            card("Room light", "Remote and night mode", link)
             Text(note).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .task { await load() }
@@ -61,10 +57,10 @@ struct PhoneQRView: View {
     func load() async {
         guard let j = await light.get(light.url("/links")) else { note = "Bridge not reachable."; return }
         if let ts = j["tailscale"] as? String {
-            night = ts + "/alarm"; remote = ts + "/app"
+            link = ts + "/app"
             note = "Permanent link over Tailscale (turn Tailscale on in the phone). Scan, then Share → Add to Home Screen."
         } else if let lan = j["lan"] as? String, let tok = j["token"] as? String {
-            night = lan + "/alarm?token=" + tok; remote = lan + "/app?token=" + tok
+            link = lan + "/app?token=" + tok
             note = "Home Wi-Fi only (no HTTPS: the phone microphone stays off). Scan, then Add to Home Screen."
         }
     }

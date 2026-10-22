@@ -23,7 +23,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ALARMS_FILE = paths.data("alarms.json")
 SOUNDS_DIR = paths.SOUNDS
 EARLIEST_ALARM, LATEST_ALARM, EARLIEST_LIGHT = 4 * 60, 11 * 60 + 59, 3 * 60 + 30
-SNOOZE_MIN = 9
+SNOOZE_MIN = 10  # default; alarms.json "snooze_minutes" (1-30), the phone can pick 5/10/15
+SNOOZE_RISE = 3  # light and sound come back over the last minutes of a snooze
 RING_MINUTES = 5  # auto-stop: the alarm stops by itself this long after it starts ringing
 
 AMBER = {"hue": 25, "sat": 100}
@@ -71,6 +72,7 @@ def load() -> dict:
     except (FileNotFoundError, json.JSONDecodeError):
         d = json.loads(json.dumps(DEFAULT))
     d.setdefault("ring_minutes", RING_MINUTES)
+    d.setdefault("snooze_minutes", SNOOZE_MIN)
     for k, v in MODES.items():  # new built-in modes appear without wiping user edits
         d.setdefault("modes", {}).setdefault(k, json.loads(json.dumps(v)))
     return d
@@ -102,6 +104,8 @@ def validate(d: dict):
     modes = d.get("modes", {})
     if not 1 <= float(d.get("ring_minutes", RING_MINUTES)) <= 60:
         raise ValueError("ring_minutes: 1-60")
+    if not 1 <= float(d.get("snooze_minutes", SNOOZE_MIN)) <= 30:
+        raise ValueError("snooze_minutes: 1-30")
     for a in d.get("alarms", []):
         m = _minutes(a["time"])
         if not EARLIEST_ALARM <= m <= LATEST_ALARM:

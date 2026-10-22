@@ -137,12 +137,16 @@ final class AlarmPlayer {
         let now = l.serverNow + outLatency - (offsetMs + bleAdjustMs) / 1000
         let x = (now - T) / 60 * scale
         let snoozed = (ev["state"] as? String) == "snoozed"
-        guard let seg = curveValue(pts, x), !snoozed, let name = soundName(at: x) else {
+        // Snooze: fade out over 4 s; afterwards the sound returns over fade_in seconds with the light.
+        let snoozeAt = (ev["snooze_at"] as? NSNumber)?.doubleValue ?? 0
+        let fadeOut = snoozed ? max(0, 1 - (now - snoozeAt) / 4) : 1
+        guard let seg = curveValue(pts, x), fadeOut > 0, let name = soundName(at: x) else {
             players.values.forEach { $0.volume = 0 }
             return
         }
-        var v = seg.a.value + (seg.b.value - seg.a.value) * seg.q
-        if let r = (ev["resume_at"] as? NSNumber)?.doubleValue { v *= min(1, max(0, (now - r) / 30)) }
+        var v = (seg.a.value + (seg.b.value - seg.a.value) * seg.q) * fadeOut
+        let fadeIn = (ev["fade_in"] as? NSNumber)?.doubleValue ?? 30
+        if !snoozed, let r = (ev["resume_at"] as? NSNumber)?.doubleValue { v *= min(1, max(0, (now - r) / fadeIn)) }
         guard let p = player(name) else { return }
         if current != name {
             if let old = current { players[old]?.volume = 0 }
