@@ -411,6 +411,7 @@ struct Panel: View {
     @EnvironmentObject var light: Light
     @EnvironmentObject var schedule: ScheduleModel
     @EnvironmentObject var alarm: AlarmCenter
+    @State private var showPhone = false
 
     var body: some View {
         let c = light.color
@@ -500,7 +501,15 @@ struct Panel: View {
             Divider().opacity(0.5)
             ScheduleRow()
             AlarmRow()
+            if showPhone {
+                PhoneQRView().transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
             HStack {
+                Button { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { showPhone.toggle() } } label: {
+                    Label(showPhone ? "Hide phone" : "Phone", systemImage: "qrcode")
+                }
+                .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary)
+                .help("QR codes for the phone: bedside night mode and remote")
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
                     .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.tertiary)

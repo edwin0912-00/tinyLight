@@ -415,7 +415,7 @@ def main():
             u = urlparse(self.path)
             q = {k: v[-1] for k, v in parse_qs(u.query).items()}
             local = self.client_address[0] in ("127.0.0.1", "::1")
-            if u.path in ("/manifest.webmanifest", "/icon.png", "/apple-touch-icon.png", "/favicon.ico"):
+            if u.path in ("/manifest.webmanifest", "/alarm.webmanifest", "/icon.png", "/apple-touch-icon.png", "/favicon.ico"):
                 name = "icon.png" if u.path == "/favicon.ico" else u.path[1:]
                 data = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", name), "rb").read()
                 self.send_response(200)
@@ -428,9 +428,10 @@ def main():
             if not self._authed(q):
                 return self._reply(401, {"error": "token required"})
             q.pop("token", None)
-            if u.path in ("/", "/app"):
-                # Phone page: open http://<bridge>.local:8787/app?token=<token>, then Add to Home Screen.
-                page = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "app.html"), "rb").read()
+            if u.path in ("/", "/app", "/alarm"):
+                # Phone pages: /app = remote, /alarm = bedside night mode. Add both to the Home Screen.
+                page = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "web",
+                                         "alarm.html" if u.path == "/alarm" else "app.html"), "rb").read()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(page)))
@@ -448,6 +449,35 @@ def main():
                       "volume": max(0.05, min(1.0, float(q.get("volume", 0.8))))}
                 publish(ev)
                 return self._reply(200, {**ev, "online": online})
+            if u.path == "/links":
+                # Phone URLs for QR codes: Tailscale HTTPS (permanent, mic allowed) if served, else LAN + token.
+                import socket
+                import subprocess
+                host = socket.gethostname()
+                host = host if host.endswith(".local") else host + ".local"
+                links = {"lan": f"http://{host}:{self.server.server_address[1]}", "token": token}
+                try:  # the Tailscale app's CLI cannot run under launchd ("GUI failed to start"): use the file
+                    with open(os.path.join(os.path.dirname(STATE_FILE), "links.json")) as f:
+                        links.update(json.load(f))
+                except (FileNotFoundError, json.JSONDecodeError):
+                    pass
+                for ts in () if "tailscale" in links else ("/Applications/Tailscale.app/Contents/MacOS/Tailscale", "tailscale"):
+                    try:
+                        r = subprocess.run([ts, "serve", "status"], capture_output=True, text=True, timeout=5)
+                        serve = r.stdout
+                        links["tailscale_note"] = (r.stderr or f"rc {r.returncode}: {r.stdout[:160]!r}").strip()[:300]
+                    except Exception as e:
+                        links["tailscale_note"] = f"{type(e).__name__}: {e}"[:200]
+                        continue
+                    head = None
+                    for line in serve.splitlines():
+                        if line.startswith("https://"):
+                            head = line.split()[0].rstrip("/")
+                        elif head and f"proxy http://127.0.0.1:{self.server.server_address[1]}" in line:
+                            links["tailscale"] = head
+                            break
+                    break
+                return self._reply(200, links)
             if u.path == "/time":
                 return self._reply(200, {"t": time.time()})
             if u.path == "/devices":

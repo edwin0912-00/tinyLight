@@ -6,7 +6,7 @@ set -e
 cd "$(dirname $0)"
 A=build/tinyLight.app
 mkdir -p $A/Contents/MacOS
-swiftc -O -parse-as-library -target arm64-apple-macos14 TinyLightApp.swift Schedule.swift Alarm.swift AlarmPlayer.swift Calibrate.swift -o $A/Contents/MacOS/tinyLight
+swiftc -O -parse-as-library -target arm64-apple-macos14 TinyLightApp.swift Schedule.swift Alarm.swift AlarmPlayer.swift Calibrate.swift PhoneQR.swift -o $A/Contents/MacOS/tinyLight
 cat > $A/Contents/Info.plist <<P
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

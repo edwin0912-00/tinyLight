@@ -116,6 +116,7 @@ final class AlarmCenter: ObservableObject {
         }
         player.update(ev)
         if st == "ringing" || st == "snoozed" { showRingPanel() } else { hideRingPanel() }
+        if st == "idle" { Task { await load() } }   // next occurrence moves on after an alarm ends
     }
 
     func load() async {
@@ -271,6 +272,9 @@ struct AlarmRow: View {
             .buttonStyle(.plain).help("Alarms and dawn curves")
         }
         .onAppear { center.attach(light) }
+        .task {  // the first load can fail at login (network not up yet); edits also come from the phone
+            while !Task.isCancelled { await center.load(); try? await Task.sleep(nanoseconds: 60_000_000_000) }
+        }
     }
 }
 
