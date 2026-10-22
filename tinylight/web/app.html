@@ -108,6 +108,8 @@
           --bgc:rgb(calc(18 + 237*var(--rl)),calc(10 + 234*var(--rl)),calc(4 + 228*var(--rl)));
           --fgc:rgb(calc(255 - 229*var(--rl)),calc(244 - 229*var(--rl)),calc(232 - 228*var(--rl)));
           background:radial-gradient(120% 70% at 50% 105%, rgba(var(--dglow,255,170,90),.45), transparent 70%), var(--bgc); color:var(--fgc); }
+  #hdr { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:calc(var(--rl) * .9); pointer-events:none; }
+  #ring > :not(#hdr) { position:relative; }
   #rclock { font-size:min(24vw,130px); font-weight:300; font-variant-numeric:tabular-nums; line-height:1; }
   #rname { opacity:.75; margin:8px 0 30px; font-size:17px; }
   #rstop { position:relative; width:min(64vw,280px); height:min(64vw,280px); border-radius:50%; background:var(--fgc); color:var(--bgc);
@@ -212,6 +214,7 @@
 </section>
 
 <section class="ov" id="ring">
+  <video id="hdr" muted playsinline loop disablepictureinpicture></video>
   <div id="rclock">--:--</div>
   <div id="rname">Good morning</div>
   <div id="rstop"><svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="48"/><circle class="arc" cx="50" cy="50" r="48" pathLength="100"/></svg>Stop</div>
@@ -273,12 +276,22 @@ function showAlarm(a) {
   $("aname").textContent = a.state === "snoozed" ? until : (a.state === "dawn" ? "Sunrise is starting" : (a.name || "Alarm"));
   $("snooze").style.display = a.state === "snoozed" ? "none" : "block";
   $("ring").classList.toggle("on", a.state === "ringing");
+  hdr(a.state === "ringing");
   $("rname").textContent = a.name || "Good morning";
   $("nhold").style.display = a.state === "dawn" || a.state === "snoozed" ? "inline-block" : "none";
   if (a.state === "snoozed") $("nsub").textContent = until + " · the light comes back slowly";
   else nightSub();
   if (a.state === "ringing" && was !== "ringing" && navigator.vibrate) navigator.vibrate([400, 200, 400]);
   if (!active) ["--dawn", "--rl"].forEach(k => document.documentElement.style.setProperty(k, k === "--rl" ? 1 : 0));
+}
+
+// HDR boost: a web page cannot set the iPhone brightness, but iOS raises the panel for HDR video.
+// Loaded as a blob because Safari plays video from a server only with byte-range support.
+async function hdr(on) {
+  const v = $("hdr");
+  if (!on) { v.pause(); return; }
+  if (!v.src) { try { v.src = URL.createObjectURL(await (await fetch("/hdr-white.mp4")).blob()); } catch (e) { return; } }
+  v.play().catch(() => {});
 }
 
 // Hold-to-stop: the fill runs for 2 s while the finger stays down; letting go early resets it.

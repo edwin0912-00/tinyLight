@@ -426,11 +426,12 @@ def main():
             u = urlparse(self.path)
             q = {k: v[-1] for k, v in parse_qs(u.query).items()}
             local = self.client_address[0] in ("127.0.0.1", "::1")
-            if u.path in ("/manifest.webmanifest", "/icon.png", "/apple-touch-icon.png", "/favicon.ico"):
+            if u.path in ("/manifest.webmanifest", "/icon.png", "/apple-touch-icon.png", "/favicon.ico", "/hdr-white.mp4"):
                 name = "icon.png" if u.path == "/favicon.ico" else u.path[1:]
                 data = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", name), "rb").read()
                 self.send_response(200)
-                self.send_header("Content-Type", "application/manifest+json" if name.endswith("manifest") else "image/png")
+                self.send_header("Content-Type", "application/manifest+json" if name.endswith("manifest")
+                                 else "video/mp4" if name.endswith(".mp4") else "image/png")
                 self.send_header("Content-Length", str(len(data)))
                 self.send_header("Cache-Control", "max-age=86400")
                 self.end_headers()
