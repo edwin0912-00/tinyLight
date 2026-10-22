@@ -112,6 +112,7 @@ final class AlarmCenter: ObservableObject {
     // Bridge event -> state, sound, ring panel. Every device gets the same event at the same moment.
     func handle(_ ev: [String: Any]) {
         let st = ev["state"] as? String ?? "idle"
+        let was = state
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             state = st
             activeName = ev["name"] as? String ?? ""
@@ -120,7 +121,7 @@ final class AlarmCenter: ObservableObject {
         player.update(ev)
         screen.alarm(st)
         if st == "ringing" || st == "snoozed" { showRingPanel() } else { hideRingPanel() }
-        if st == "idle" { Task { await load() } }   // next occurrence moves on after an alarm ends
+        if st == "idle" && was != "idle" { Task { await load() } }   // next occurrence moves on after an alarm ends
     }
 
     func load() async {
@@ -135,10 +136,19 @@ final class AlarmCenter: ObservableObject {
                                  mode: a["mode"] as? String ?? "gentle", sound: a["sound"] as? String ?? (sounds.first ?? ""))
             }
             let order = ["gentle", "long", "quick", "light", "backup"]
+            let old = Dictionary(uniqueKeysWithValues: modes.map { ($0.id, $0) })
             modes = (j["modes"] as? [String: [String: Any]] ?? [:]).map { k, m in
                 AlarmMode(id: k, name: m["name"] as? String ?? k, autoOff: (m["auto_off"] as? NSNumber)?.intValue ?? 90,
                           light: (m["light"] as? [[String: Any]] ?? []).map { APoint(json: $0, key: "level") },
                           sound: (m["sound"] as? [[String: Any]] ?? []).map { APoint(json: $0, key: "volume") })
+            }.map { m in
+                // Same points as before keep their ids, so a selection or a drag survives a reload.
+                var m = m
+                if let o = old[m.id] {
+                    if o.light.count == m.light.count { for i in m.light.indices { m.light[i].id = o.light[i].id } }
+                    if o.sound.count == m.sound.count { for i in m.sound.indices { m.sound[i].id = o.sound[i].id } }
+                }
+                return m
             }.sorted { (order.firstIndex(of: $0.id) ?? 99, $0.id) < (order.firstIndex(of: $1.id) ?? 99, $1.id) }
         }
         let f = ISO8601DateFormatter()
