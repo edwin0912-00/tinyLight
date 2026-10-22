@@ -96,6 +96,7 @@ final class Light: ObservableObject {
     /// server clock - local clock, seconds (Cristian's method over /time, best of 5).
     @Published var serverOffset: Double = 0
     var onAlarm: (([String: Any]) -> Void)?
+    var onState: (([String: Any]) -> Void)?
     var onCalibrate: (([String: Any]) -> Void)?
     var onPing: (([String: Any]) -> Void)?
     var serverNow: Double { Date().timeIntervalSince1970 + serverOffset }
@@ -128,7 +129,7 @@ final class Light: ObservableObject {
                     for try await line in bytes.lines where line.hasPrefix("data: ") {
                         guard let d = line.dropFirst(6).data(using: .utf8),
                               let ev = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
-                        if ev["type"] as? String == "state", let st = ev["state"] as? [String: Any] { applyState(st) }
+                        if ev["type"] as? String == "state", let st = ev["state"] as? [String: Any] { applyState(st); onState?(st) }
                         if ev["type"] as? String == "alarm" { onAlarm?(ev) }
                         if ev["type"] as? String == "calibrate" { onCalibrate?(ev) }
                         if ev["type"] as? String == "ping" { onPing?(ev) }

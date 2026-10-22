@@ -90,6 +90,7 @@ final class AlarmCenter: ObservableObject {
     @Published var editing = false
     @Published var error: String?
     let player = AlarmPlayer()
+    let screen = ScreenLight()
     private weak var light: Light?
     private var saveTask: Task<Void, Never>?
     private var ringPanel: NSPanel?
@@ -99,6 +100,7 @@ final class AlarmCenter: ObservableObject {
         light = l
         player.light = l
         l.onAlarm = { [weak self] ev in self?.handle(ev) }
+        l.onState = { [weak self] st in self?.screen.lamp(st) }
         l.onPing = { [weak self] ev in
             let target = ev["device"] as? String ?? "all"
             guard let self, target == "all" || target == self.player.deviceName else { return }
@@ -116,6 +118,7 @@ final class AlarmCenter: ObservableObject {
             snoozeUntil = (ev["snooze_until"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
         }
         player.update(ev)
+        screen.alarm(st)
         if st == "ringing" || st == "snoozed" { showRingPanel() } else { hideRingPanel() }
         if st == "idle" { Task { await load() } }   // next occurrence moves on after an alarm ends
     }
@@ -282,6 +285,7 @@ struct AlarmRow: View {
 
 struct AlarmView: View {
     @EnvironmentObject var center: AlarmCenter
+    @AppStorage(ScreenLight.key) private var screenSunrise = false
     @State private var modeId = "gentle"
     @State private var previewing: String?
 
@@ -297,6 +301,16 @@ struct AlarmView: View {
                 Spacer()
                 Button { center.add() } label: { Label("Add", systemImage: "plus") }.font(.system(size: 11))
             }
+            HStack(spacing: 8) {
+                Toggle("Screen sunrise on this Mac", isOn: $screenSunrise)
+                    .toggleStyle(.switch).controlSize(.mini).font(.system(size: 11))
+                    .disabled(!center.screen.available)
+                Spacer()
+                Button("Preview 15 s") { center.screen.runPreview() }
+                    .font(.system(size: 11)).disabled(!center.screen.available)
+            }
+            .help(center.screen.available ? "The screen glows and brightens with the lamp during an alarm. Lid must stay open; the lock screen hides the colour."
+                                          : "No built-in screen is active (lid closed?).")
             if let e = center.error {
                 Text(e).font(.system(size: 11)).foregroundStyle(.red)
             }
